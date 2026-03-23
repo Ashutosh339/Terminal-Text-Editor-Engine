@@ -1,0 +1,4 @@
+# Ignore compiled executables and Qt build folders
+*.exe
+*.o
+build-*/
