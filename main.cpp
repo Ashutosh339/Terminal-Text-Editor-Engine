@@ -1,5 +1,5 @@
 /* * Minor Project: Terminal Text Editor Engine
- * Description: Final Master Code (Gap Buffer, Undo/Redo, Syntax Colors, File I/O, Search, Line Numbers, UI Patched)
+ * Description: Final Master Code (Find & Replace added via Ctrl+R)
  */
 
 #include <iostream>
@@ -15,12 +15,15 @@ using namespace std;
 // ==========================================
 // --- STATE MACHINE & GLOBALS ---
 // ==========================================
-enum Mode { NORMAL, COMMAND, SEARCH };
+// NEW: Added REPLACE_TARGET and REPLACE_WITH modes
+enum Mode { NORMAL, COMMAND, SEARCH, REPLACE_TARGET, REPLACE_WITH };
 Mode currentMode = NORMAL;
+
 std::string commandPrompt = "";
 std::string searchPrompt = "";
+std::string replaceTargetPrompt = ""; // Word to find
+std::string replaceWithPrompt = "";   // Word to replace it with
 
-// A Struct and a Vector to store unlimited search highlights
 struct Match { int x; int y; };
 std::vector<Match> searchMatches;
 std::string match_word = "";
@@ -136,8 +139,7 @@ std::string highlightLine(std::string raw_line) {
 HANDLE hStdout; DWORD fdwSaveOldOutMode;
 int cursor_x = 0; int cursor_y = 0; int row_offset = 0;
 
-// UI BUG FIXED: Redo added to all status bar strings
-std::string statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+Z: Undo | Ctrl+Y: Redo ";
+std::string statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+R: Replace | Ctrl+Z: Undo||Ctrl+Y:Redo";
 std::vector<GapBuffer*> textBuffer;
 std::string currentFilePath = "";
 
@@ -157,7 +159,7 @@ void gotoxy(int x, int y) {
 // --- FILE I/O SYSTEM ---
 // ==========================================
 void initEditor() {
-    system("mode con cols=100 lines=30");
+    system("mode con cols=105 lines=30");
     hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
     GetConsoleMode(hStdout, &fdwSaveOldOutMode);
     SetConsoleMode(hStdout, fdwSaveOldOutMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
@@ -240,6 +242,61 @@ void executeSearch() {
 }
 
 // ==========================================
+// --- NEW: FIND AND REPLACE ALGORITHM ---
+// ==========================================
+void executeReplace() {
+    int replaceCount = 0;
+
+    if (replaceTargetPrompt.empty()) {
+        statusMessage = " ERROR: Cannot replace an empty word! ";
+        return;
+    }
+
+    for (int y = 0; y < (int)textBuffer.size(); y++) {
+        std::string line = textBuffer[y]->toString();
+        size_t pos = line.find(replaceTargetPrompt, 0);
+
+        while (pos != std::string::npos) {
+            int start_x = (int)pos;
+
+            // 1. Move gap to the END of the target word
+            textBuffer[y]->moveGapTo(start_x + replaceTargetPrompt.length());
+
+            // 2. Delete the target word backwards (and log to UndoStack)
+            for (int i = 0; i < (int)replaceTargetPrompt.length(); i++) {
+                char deletedChar = textBuffer[y]->charBeforeGap();
+                textBuffer[y]->backspace();
+                Action a = {DELETE_CHAR, deletedChar, start_x + (int)replaceTargetPrompt.length() - i - 1, y};
+                undoStack.push(a);
+            }
+
+            // 3. Insert the replacement word (and log to UndoStack)
+            textBuffer[y]->moveGapTo(start_x);
+            int current_x = start_x;
+            for (char c : replaceWithPrompt) {
+                textBuffer[y]->insertChar(c);
+                Action a = {TYPE_CHAR, c, current_x, y};
+                undoStack.push(a);
+                current_x++;
+            }
+
+            replaceCount++;
+            clearRedoStack();
+
+            // Update line string and find the next occurrence AFTER the newly inserted word
+            line = textBuffer[y]->toString();
+            pos = line.find(replaceTargetPrompt, start_x + replaceWithPrompt.length());
+        }
+    }
+
+    if (replaceCount > 0) {
+        statusMessage = " SUCCESS: Replaced " + std::to_string(replaceCount) + " occurrences. ";
+    } else {
+        statusMessage = " ERROR: Could not find '" + replaceTargetPrompt + "' to replace. ";
+    }
+}
+
+// ==========================================
 // --- THE PROJECTOR (With Line Numbers) ---
 // ==========================================
 void refreshScreen() {
@@ -250,15 +307,12 @@ void refreshScreen() {
         std::string rawLine = "";
         int buffer_index = y + row_offset;
 
-        // Building the Line Number Margin
         std::string lineMargin = "";
 
         if (buffer_index < (int)textBuffer.size()) {
             rawLine = textBuffer[buffer_index]->toString();
-
             std::string numStr = std::to_string(buffer_index + 1);
             while (numStr.length() < 3) numStr = " " + numStr;
-
             lineMargin = "\x1b[90m" + numStr + " | \x1b[0m";
         } else {
             rawLine = "~";
@@ -271,7 +325,6 @@ void refreshScreen() {
         std::cout << lineMargin << highlightLine(rawLine);
     }
 
-    // GLOBAL HIGHLIGHTER OVERLAY
     for (Match m : searchMatches) {
         if (m.y >= row_offset && m.y < row_offset + 24) {
             gotoxy(m.x + 6, m.y - row_offset);
@@ -279,18 +332,23 @@ void refreshScreen() {
         }
     }
 
-    // RENDER STATUS BAR
+    // NEW: Update Status Bar to handle REPLACE prompts
     gotoxy(0, 24);
     std::string barText = "";
     if (currentMode == NORMAL) barText = statusMessage;
     else if (currentMode == COMMAND) barText = " OPEN FILE PATH: " + commandPrompt;
     else if (currentMode == SEARCH) barText = " SEARCH FOR: " + searchPrompt;
+    else if (currentMode == REPLACE_TARGET) barText = " REPLACE: Find what? " + replaceTargetPrompt;
+    else if (currentMode == REPLACE_WITH) barText = " REPLACE: '" + replaceTargetPrompt + "' with what? " + replaceWithPrompt;
 
-    while (barText.length() < 90) barText += " ";
+    while (barText.length() < 105) barText += " ";
     std::cout << "\x1b[7m" << barText << "\x1b[0m";
 
+    // Track cursor positioning for new modes
     if (currentMode == COMMAND) gotoxy(17 + commandPrompt.length(), 24);
     else if (currentMode == SEARCH) gotoxy(13 + searchPrompt.length(), 24);
+    else if (currentMode == REPLACE_TARGET) gotoxy(21 + replaceTargetPrompt.length(), 24);
+    else if (currentMode == REPLACE_WITH) gotoxy(28 + replaceTargetPrompt.length() + replaceWithPrompt.length(), 24);
     else gotoxy(cursor_x + 6, cursor_y - row_offset);
 
     showBlinkingCursor(true);
@@ -307,10 +365,44 @@ int main() {
         refreshScreen();
         int c = _getch();
 
+        // --- NEW: REPLACE_TARGET PHYSICS ---
+        if (currentMode == REPLACE_TARGET) {
+            if (c == 27) { // Escape
+                currentMode = NORMAL;
+                statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+R: Replace | Ctrl+Z: Undo|Ctrl+Y:Redo";
+            }
+            else if (c == 13) { // Enter moves to the next step
+                if (!replaceTargetPrompt.empty()) currentMode = REPLACE_WITH;
+            }
+            else if (c == 8) { // Backspace
+                if (replaceTargetPrompt.length() > 0) replaceTargetPrompt.pop_back();
+            }
+            else if (c >= 32 && c <= 126) replaceTargetPrompt += (char)c;
+            continue;
+        }
+
+        // --- NEW: REPLACE_WITH PHYSICS ---
+        if (currentMode == REPLACE_WITH) {
+            if (c == 27) { // Escape
+                currentMode = NORMAL;
+                statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+R: Replace | Ctrl+Z: Undo ||Ctrl+Y :Redo";
+            }
+            else if (c == 13) { // Enter executes the full replacement
+                executeReplace();
+                currentMode = NORMAL;
+            }
+            else if (c == 8) { // Backspace
+                if (replaceWithPrompt.length() > 0) replaceWithPrompt.pop_back();
+            }
+            else if (c >= 32 && c <= 126) replaceWithPrompt += (char)c;
+            continue;
+        }
+
+        // --- EXISTING PHYSICS ---
         if (currentMode == SEARCH) {
             if (c == 27) {
                 currentMode = NORMAL;
-                statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+Z: Undo | Ctrl+Y: Redo ";
+                statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+R: Replace | Ctrl+Z: Undo||Ctrl+Y :Redo ";
             }
             else if (c == 13) {
                 executeSearch();
@@ -319,16 +411,14 @@ int main() {
             else if (c == 8) {
                 if (searchPrompt.length() > 0) searchPrompt.pop_back();
             }
-            else if (c >= 32 && c <= 126) {
-                searchPrompt += (char)c;
-            }
+            else if (c >= 32 && c <= 126) searchPrompt += (char)c;
             continue;
         }
 
         if (currentMode == COMMAND) {
             if (c == 27) {
                 currentMode = NORMAL;
-                statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+Z: Undo | Ctrl+Y: Redo ";
+                statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+R: Replace | Ctrl+Z: Undo|Ctrl+Y :Redo ";
             }
             else if (c == 13) {
                 loadFile(commandPrompt);
@@ -337,16 +427,11 @@ int main() {
             else if (c == 8) {
                 if (commandPrompt.length() > 0) commandPrompt.pop_back();
             }
-            else if (c >= 32 && c <= 126) {
-                commandPrompt += (char)c;
-            }
+            else if (c >= 32 && c <= 126) commandPrompt += (char)c;
             continue;
         }
 
-        // Clear ALL yellow highlights the second the user types or moves
-        if (c == 224 || c == 0 || c == 13 || c == 8 || (c >= 32 && c <= 126)) {
-            searchMatches.clear();
-        }
+        if (c == 224 || c == 0 || c == 13 || c == 8 || (c >= 32 && c <= 126)) searchMatches.clear();
 
         if (c == 17) break; // Ctrl + Q
         if (c == 19) { saveFile(); continue; } // Ctrl + S
@@ -363,11 +448,18 @@ int main() {
             continue;
         }
 
-        // UI BUG FIXED: Auto-reset logic updated to include Redo
-        if (statusMessage != " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+Z: Undo | Ctrl+Y: Redo " &&
+        // NEW: Trigger Find & Replace Mode (Ctrl + R)
+        if (c == 18) {
+            currentMode = REPLACE_TARGET;
+            replaceTargetPrompt = "";
+            replaceWithPrompt = "";
+            continue;
+        }
+
+        if (statusMessage != " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+R: Replace | Ctrl+Z: Undo|Ctrl+Y :Redo ";
             statusMessage.find("SUCCESS:") == std::string::npos &&
             statusMessage.find("ERROR:") == std::string::npos) {
-            statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+Z: Undo | Ctrl+Y: Redo ";
+            statusMessage = " NORMAL | Ctrl+S: Save | Ctrl+O: Open | Ctrl+F: Find | Ctrl+R: Replace | Ctrl+Z: Undo ";
         }
 
         if (c == 26) {
