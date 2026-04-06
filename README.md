@@ -1,29 +1,21 @@
-# C++ Terminal Text Editor Engine
+# 🚀 Secure Cloud-Sync Terminal Editor (v2.3)
 
-A high-performance, multi-modal terminal text editor engineered from scratch in pure C++. This project bypasses standard GUI frameworks to interact directly with the console hardware, demonstrating advanced memory management, data structure implementation, and real-time algorithmic execution.
+A high-performance, **Multi-threaded** C++ Text Editor featuring a custom **Gap Buffer** data structure and a secure **Socket-based** Cloud Backup system.
 
-### ⚙️ Core Architecture & Features
 
-* **O(1) Memory Engine (Gap Buffer):** Implemented a custom Gap Buffer data structure utilizing raw C++ pointers. This allows for instantaneous, O(1) time complexity for character insertion and deletion, matching the memory architecture used in professional editors like Emacs.
-* **Command Design Pattern (Time Machine):** Built a fault-tolerant Undo/Redo history system utilizing dual `std::stack` architectures, logging user keystrokes for deep multi-layered state reversion.
-* **Real-Time Lexical Scanner:** Engineered a Phase 1 compiler lexical analyzer that parses strings in real-time, injecting ANSI formatting codes to render dynamic C++ syntax highlighting directly into the terminal stream.
-<<<<<<< HEAD
-* **Algorithmic Search Engine:** Developed a real-time sliding-window string-matching algorithm to power a global "Find All" search feature (`Ctrl+F`). 
-* **Systems Integration:** Implemented low-level Windows API hooks for dynamic hardware cursor tracking, UI overlays, and bare-metal File I/O operations.
 
-### 🚀 Usage
-* `Ctrl + O`: Open / Load File
-* `Ctrl + S`: Save File
-* `Ctrl + F`: Global Search
-=======
-* **Algorithmic Search & Replace:** Developed a real-time sliding-window string-matching algorithm to power a global "Find All" search feature, integrated with a memory-safe programmatic replacement system.
-* **Systems Integration:** Implemented low-level Windows API hooks for dynamic hardware cursor tracking, UI overlays, and bare-metal File I/O operations.
+## 🛠️ Key Technical Features
+* **Gap Buffer Engine:** Efficient text manipulation with $O(1)$ cursor insertions and deletions.
+* **Concurrency:** Multi-threaded C++ Backend (Winsock2) handling multiple simultaneous client uploads without blocking.
+* **Custom Protocol:** Implemented a secure application-layer protocol using **Secret-Key Handshaking** (`SATI_PROJ_2026`).
+* **Security:** Integrated **Path Traversal Protection**, **Buffer Overflow Guards**, and **Socket Timeouts** (Anti-Slowloris).
+* **Undo/Redo System:** Command-pattern implementation using dual-stack architecture for robust state management.
 
-### 🚀 Usage Keybindings
-* `Ctrl + O`: Open / Load File
-* `Ctrl + S`: Save File
-* `Ctrl + F`: Global Search
-* `Ctrl + R`: Find and Replace
->>>>>>> e2cb7a91e8514ffd08de92be32aa94341b689966
-* `Ctrl + Z`: Undo 
-* `Ctrl + Y`: Redo
+
+
+## 📂 Project Structure
+```text
+├── Editor_Client/          # C++ Terminal UI + Gap Buffer Logic
+├── SystemsLabServer/       # Multi-threaded C++ Backend (Secure)
+├── storage/                # Cloud-synced files with versioned timestamps
+└── README.md               # Documentation
