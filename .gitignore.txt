@@ -1,4 +1,13 @@
-# Ignore compiled executables and Qt build folders
+# C++ junk
 *.exe
 *.o
-build-*/
+*.obj
+build/
+.qtcreator/
+
+# Node/React junk
+node_modules/
+.env
+build/
+dist/
+.DS_Store
